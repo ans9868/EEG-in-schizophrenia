@@ -1,0 +1,22 @@
+{
+  "Name": "EEG in Schizophrenia BIDS Conversion",
+  "BIDSVersion": "1.11.1",
+  "DatasetType": "raw",
+  "GeneratedBy": [
+    {
+      "Name": "build_bids_from_raw.py",
+      "Version": "1.0.0",
+      "Description": "Copies the flat EDF source dataset into a BIDS-organized layout with metadata sidecars."
+    }
+  ],
+  "SourceDatasets": [
+    {
+      "URL": "file:///Users/user/eeg-datasets/EEG-in-schizophrenia",
+      "Description": "Flat EDF source dataset with 14 controls and 14 schizophrenia recordings."
+    }
+  ],
+  "ReferencesAndLinks": [
+    "https://doi.org/10.18150/repod.0107441"
+  ],
+  "License": "n/a"
+}

@@ -1,0 +1,10 @@
+{
+  "TaskName": "rest",
+  "SamplingFrequency": 250.0,
+  "PowerLineFrequency": "n/a",
+  "SoftwareFilters": "n/a",
+  "EEGReference": "Reference electrode placed between Fz and Cz, as described in Metadata.md.",
+  "RecordingType": "continuous",
+  "EEGChannelCount": 19,
+  "EEGPlacementScheme": "International 10-20 system (19 channels)."
+}

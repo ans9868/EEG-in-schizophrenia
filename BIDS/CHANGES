@@ -1,0 +1,4 @@
+2026-04-21
+- Created the initial BIDS conversion from the flat EDF source dataset.
+- Assigned canonical participant IDs with controls first and schizophrenia second.
+- Packaged 28 EDF recordings into the BIDS tree.

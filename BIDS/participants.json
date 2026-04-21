@@ -1,0 +1,21 @@
+{
+  "participant_id": {
+    "Description": "Canonical BIDS participant identifier assigned during conversion."
+  },
+  "group": {
+    "Description": "Diagnostic cohort preserved from the source EDF dataset.",
+    "Levels": {
+      "control": "Healthy control participant.",
+      "schizophrenia": "Participant with schizophrenia."
+    }
+  },
+  "original_subject_id": {
+    "Description": "Original source subject identifier from the flat EDF archive."
+  },
+  "source_filename": {
+    "Description": "Original EDF filename in the flat source archive."
+  },
+  "recording_duration_sec": {
+    "Description": "Continuous recording duration in seconds."
+  }
+}
