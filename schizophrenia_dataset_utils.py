@@ -15,25 +15,25 @@ import mne
 
 BIDS_VERSION = "1.11.1"
 CANONICAL_CHANNEL_ORDER = (
-    "Fp1",
     "Fp2",
-    "F7",
-    "F3",
-    "Fz",
-    "F4",
     "F8",
-    "T3",
-    "C3",
-    "Cz",
-    "C4",
     "T4",
-    "T5",
-    "P3",
-    "Pz",
-    "P4",
     "T6",
-    "O1",
     "O2",
+    "Fp1",
+    "F7",
+    "T3",
+    "T5",
+    "O1",
+    "F4",
+    "C4",
+    "P4",
+    "F3",
+    "C3",
+    "P3",
+    "Fz",
+    "Cz",
+    "Pz",
 )
 EXPECTED_CHANNEL_SET = frozenset(CANONICAL_CHANNEL_ORDER)
 GROUP_ORDER = {
@@ -63,6 +63,9 @@ class RawRecord:
     annotations_count: int
     header_patient_id: str
     meas_date_iso: str
+    missing_channels: tuple[str, ...]
+    extra_channels: tuple[str, ...]
+    channel_policy: str
 
 
 def write_tsv(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) -> None:
@@ -146,6 +149,106 @@ def extract_header_patient_id(raw: mne.io.BaseRaw) -> str:
     return "" if value is None else str(value)
 
 
+def assess_channel_membership(channel_order: Iterable[str]) -> tuple[tuple[str, ...], tuple[str, ...], str]:
+    observed = list(channel_order)
+    observed_set = frozenset(observed)
+    missing = tuple(channel_name for channel_name in CANONICAL_CHANNEL_ORDER if channel_name not in observed_set)
+    extra = tuple(channel_name for channel_name in observed if channel_name not in EXPECTED_CHANNEL_SET)
+
+    if missing:
+        return missing, extra, "exclude_missing_required_channels"
+    if extra:
+        return missing, extra, "keep_drop_extra_channels"
+    if tuple(observed) == tuple(CANONICAL_CHANNEL_ORDER):
+        return missing, extra, "keep_exact_target_channels"
+    return missing, extra, "keep_reorder_only"
+
+
+def rewrite_edf_channel_order(source_path: Path, destination_path: Path, target_order: Iterable[str]) -> None:
+    target_order = tuple(target_order)
+    with source_path.open("rb") as handle:
+        general_header = handle.read(256)
+        n_signals = int(general_header[252:256].decode("ascii").strip())
+        signal_header_bytes = handle.read(256 * n_signals)
+        data_bytes = handle.read()
+
+    if len(signal_header_bytes) != 256 * n_signals:
+        raise RuntimeError(f"Incomplete EDF signal header in {source_path}")
+
+    field_widths = (
+        ("label", 16),
+        ("transducer", 80),
+        ("physical_dimension", 8),
+        ("physical_min", 8),
+        ("physical_max", 8),
+        ("digital_min", 8),
+        ("digital_max", 8),
+        ("prefilter", 80),
+        ("n_samples_per_record", 8),
+        ("reserved", 32),
+    )
+
+    field_values: dict[str, list[bytes]] = {}
+    cursor = 0
+    for field_name, width in field_widths:
+        values = [
+            signal_header_bytes[cursor + index * width : cursor + (index + 1) * width]
+            for index in range(n_signals)
+        ]
+        field_values[field_name] = values
+        cursor += width * n_signals
+
+    labels = [value.decode("ascii", errors="ignore").strip() for value in field_values["label"]]
+    index_by_label = {label: index for index, label in enumerate(labels)}
+    missing = [channel_name for channel_name in target_order if channel_name not in index_by_label]
+    extra = [label for label in labels if label not in target_order]
+    if missing:
+        raise RuntimeError(
+            f"Cannot reorder EDF {source_path.name}: missing target channels {missing}"
+        )
+
+    reorder_indices = [index_by_label[channel_name] for channel_name in target_order] + [
+        index_by_label[channel_name] for channel_name in extra
+    ]
+    n_samples_per_record = [
+        int(value.decode("ascii", errors="ignore").strip()) for value in field_values["n_samples_per_record"]
+    ]
+    signal_byte_widths = [sample_count * 2 for sample_count in n_samples_per_record]
+    bytes_per_record = sum(signal_byte_widths)
+    if bytes_per_record == 0:
+        raise RuntimeError(f"Unexpected zero-byte EDF record size in {source_path.name}")
+    if len(data_bytes) % bytes_per_record != 0:
+        raise RuntimeError(
+            f"EDF payload size for {source_path.name} does not align with the record size"
+        )
+
+    reordered_signal_header = bytearray()
+    for field_name, _width in field_widths:
+        for index in reorder_indices:
+            reordered_signal_header.extend(field_values[field_name][index])
+
+    reordered_data = bytearray()
+    n_records = len(data_bytes) // bytes_per_record
+    offsets = []
+    offset = 0
+    for width in signal_byte_widths:
+        offsets.append((offset, offset + width))
+        offset += width
+    for record_index in range(n_records):
+        record_start = record_index * bytes_per_record
+        record_end = record_start + bytes_per_record
+        record_bytes = data_bytes[record_start:record_end]
+        signal_chunks = [record_bytes[start:end] for start, end in offsets]
+        for index in reorder_indices:
+            reordered_data.extend(signal_chunks[index])
+
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    with destination_path.open("wb") as handle:
+        handle.write(general_header)
+        handle.write(reordered_signal_header)
+        handle.write(reordered_data)
+
+
 def collect_raw_records(raw_root: Path) -> list[RawRecord]:
     raw_root = raw_root.resolve()
     source_paths = sorted(raw_root.glob("*.edf"))
@@ -160,6 +263,7 @@ def collect_raw_records(raw_root: Path) -> list[RawRecord]:
         group, subject_number = parse_source_name(source_path.name)
         raw = mne.io.read_raw_edf(source_path, preload=True, infer_types=True, verbose="ERROR")
         channel_order = tuple(raw.ch_names)
+        missing_channels, extra_channels, channel_policy = assess_channel_membership(channel_order)
         channel_order_variant = order_to_variant.setdefault(
             channel_order,
             f"variant_{len(order_to_variant) + 1:02d}",
@@ -187,6 +291,9 @@ def collect_raw_records(raw_root: Path) -> list[RawRecord]:
                 annotations_count=len(raw.annotations),
                 header_patient_id=extract_header_patient_id(raw),
                 meas_date_iso=normalize_meas_date(raw),
+                missing_channels=missing_channels,
+                extra_channels=extra_channels,
+                channel_policy=channel_policy,
             )
         )
 
@@ -212,6 +319,12 @@ def ensure_expected_channel_sets(records: list[RawRecord]) -> None:
         return
     details = ", ".join(record.source_name for record in bad_records)
     raise ValueError(f"Unexpected channel set found in: {details}")
+
+
+def split_records_by_channel_policy(records: list[RawRecord]) -> tuple[list[RawRecord], list[RawRecord]]:
+    retained = [record for record in records if record.channel_policy != "exclude_missing_required_channels"]
+    excluded = [record for record in records if record.channel_policy == "exclude_missing_required_channels"]
+    return retained, excluded
 
 
 def bids_participant_ids(records: list[RawRecord]) -> dict[str, str]:

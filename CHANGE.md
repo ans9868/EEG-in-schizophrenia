@@ -51,13 +51,15 @@ The normalized derivative makes real derivative files.
 Per recording:
 
 - the raw EDF was read with MNE
-- the channel set was verified
-- the channels were reordered into one canonical 19-channel 10-20 order
+- the channel set was checked against one required target channel set
+- if extra channels were present, they would be dropped before writing the normalized derivative
+- if required channels were missing, the subject would be excluded from the normalized derivative
+- retained subjects had their channels reordered into the cohort-majority order expected by the downstream pipeline
 - the result was saved as a new `.fif` file named `rest_raw.fif`
 
-Canonical channel order used:
+Target output order used:
 
-- `Fp1, Fp2, F7, F3, Fz, F4, F8, T3, C3, Cz, C4, T4, T5, P3, Pz, P4, T6, O1, O2`
+- `Fp2, F8, T4, T6, O2, Fp1, F7, T3, T5, O1, F4, C4, P4, F3, C3, P3, Fz, Cz, Pz`
 
 Structural changes:
 
@@ -77,6 +79,17 @@ Structural changes:
 - no artifact rejection was applied
 - no duration trimming was applied
 
+### Channel compatibility rule
+
+Normalization now follows this explicit rule:
+
+- same required channels, different order:
+  keep subject and reorder channels
+- required channels plus extras:
+  keep subject and drop extras
+- missing any required channel:
+  exclude subject from the normalized derivative
+
 ### Hash and uniqueness results
 
 Evidence files:
@@ -90,6 +103,8 @@ Current result:
 - raw EDF duplicate hash groups: `0`
 - decoded-signal duplicate hash groups: `0`
 - normalized FIF duplicate file-hash groups: `0`
+- normalized exclusions for missing required channels: `0`
+- subject `h12.edf` is retained and explicitly reordered into the target output order
 
 Interpretation:
 
@@ -111,10 +126,17 @@ The BIDS output is a real BIDS-style packaging, not just a report.
 
 Per recording:
 
-- the original EDF was copied into a BIDS participant folder
+- the source EDF was packaged into a BIDS participant folder
 - the filename was changed to BIDS form such as `sub-001_task-rest_eeg.edf`
 - a matching `_eeg.json` sidecar was written
 - a matching `_channels.tsv` sidecar was written
+- for `h12.edf`, the EDF was intentionally rewritten into the target output order before being placed in BIDS
+
+Before a source subject is packaged into BIDS:
+
+- if the subject has the full required target channel set, it is retained
+- if the subject is missing any required target channel, it is excluded from BIDS entirely
+- excluded source subjects do not leave gaps in BIDS participant numbering
 
 Dataset-level files created:
 
@@ -140,8 +162,8 @@ Example:
 
 ### What did not change
 
-- the BIDS EDF files preserve the source EDF byte content
-- source channel order is preserved in the BIDS EDF files
+- `27` BIDS EDF files preserve the source EDF byte content exactly
+- `h12.edf` does not preserve source byte content exactly because it is intentionally reordered to the expected cohort-majority order
 - no signal-level preprocessing was applied during BIDS packaging
 
 Important note:
@@ -163,12 +185,14 @@ Current result:
 - raw EDF duplicate hash groups: `0`
 - decoded-signal duplicate hash groups: `0`
 - copied BIDS EDF duplicate file-hash groups: `0`
-- copied BIDS EDF source-hash mismatches: `0`
+- copied BIDS EDF intentional source-hash mismatches: `1`
+- BIDS exclusions for missing required channels: `0`
 
 Interpretation:
 
 - every BIDS EDF copy is unique
-- every BIDS EDF copy matches its source EDF hash exactly
+- all retained BIDS EDF files except `h12.edf` match their source EDF hash exactly
+- `h12.edf` is intentionally rewritten into the expected channel order and therefore has a different file hash
 
 ## Difference Between The Two Derived Levels
 
@@ -183,7 +207,8 @@ BIDS packaging:
 
 - intended for standardized dataset organization and metadata
 - keeps EDF as the recording format
-- preserves source channel order
+- preserves source channel order for all subjects except the known `h12` outlier
+- excludes source subjects if required target channels are missing
 - adds BIDS names, sidecars, and participant metadata
 
 ## Bottom Line
@@ -196,3 +221,7 @@ Real outputs were created at both derived levels:
 - a real BIDS directory with copied EDF files and sidecars
 
 The raw source remains unchanged, and the current hash manifests indicate that all raw, normalized, and BIDS recording files are unique at the file-hash level within their respective builds.
+
+For the current source dataset, no subject triggered the missing-channel exclusion rule, so both derived levels still contain all `28` source subjects.
+
+The one deliberate hardcoded exception is subject `h12.edf`, which is rewritten in both derived levels so its channel order matches the cohort-majority order expected by the downstream pipeline.

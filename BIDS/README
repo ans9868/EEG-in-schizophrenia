@@ -4,14 +4,24 @@ This directory is a BIDS-organized packaging of the flat EDF source dataset.
 
 ## Summary
 
-- controls: `14`
-- schizophrenia: `14`
-- total participants: `28`
+- raw source recordings seen: `28`
+- BIDS participants retained: `28`
+- controls retained: `14`
+- schizophrenia retained: `14`
+- source recordings excluded for missing required channels: `0`
+- retained recordings with extra channels that would be dropped in normalization: `0`
 - task label: `rest`
 - exact raw duplicate groups found in the source: `0`
 - decoded-signal duplicate groups found in the source: `0`
 - copied BIDS EDF duplicate file-hash groups found: `0`
-- observed source channel-order variants: `variant_01, variant_02`
+- observed retained source channel-order variants: `variant_01, variant_02`
+
+## Channel Policy
+
+- BIDS keeps only subjects that contain the full required target channel set
+- if a source subject has missing required target channels, that subject is omitted entirely from the BIDS dataset
+- retained BIDS participants are renumbered densely, so excluded source subjects do not leave gaps in `sub-###` numbering
+- retained BIDS EDF files are written in the cohort-majority order expected by the downstream pipeline
 
 ## Mapping Rule
 
@@ -23,13 +33,21 @@ Canonical participant IDs were assigned deterministically as:
 ## Notes
 
 - this BIDS layer preserves the source EDF recordings rather than rebuilding them from a derivative
-- source EDF channel order is preserved in the copied BIDS recordings and documented in each `_channels.tsv` file
+- the only known source-order outlier is `h12.edf`, and it is deliberately rewritten into the target order in BIDS
 - copied BIDS EDF file hashes are recorded in `sourcedata/bids_file_hashes.tsv`
+- excluded source subjects are documented in `sourcedata/exclusions.tsv`
+- subject 12 hardcoded reorder applied in BIDS: `yes`
+- the subject-12 BIDS EDF therefore has an intentional source-hash mismatch that is recorded in `sourcedata/validation.tsv`
 - the normalized derivative is the place where channel order is standardized for downstream analysis
 - the current task label is `rest` because the local source metadata does not explicitly encode eyes-open versus eyes-closed
+
+## Excluded Source Subjects
+
+- None. No source subject was missing required target channels in the current dataset.
 
 ## Validation
 
 - validation tables live under `/Users/user/eeg-datasets/EEG-in-schizophrenia/BIDS/sourcedata`
 - copied EDF SHA-256 hashes were checked against source hashes
-- sidecar files were generated for every recording
+- all retained subjects match source hashes except `h12.edf`, which was intentionally rewritten into the target order
+- sidecar files were generated for every retained recording
